@@ -1,0 +1,52 @@
+# EmbeddingGemma-2-Jev: LLM & Agent Knowledge Specification
+
+> Machine-readable interface specification and self-integration guide for Large Language Models (LLMs), Autonomous Agents, and Tool-Calling Frameworks.
+
+## System Identity & Role
+EmbeddingGemma-2-Jev is a deterministic auxiliary decision judge and state telemetry engine built upon Google DeepMind's 744M parameter `embeddinggemma-2` architecture. It serves as an in-process or network-accessible cognitive co-processor for primary generative language models (such as Gemini, Claude, and local LLMs).
+
+## Why an LLM Agent Should Use This Tool
+Primary generative LLMs occasionally hallucinate execution parameters, underestimate destructive tool hazards, or fail to assess physical hardware contention. EmbeddingGemma-2-Jev provides:
+1. Deterministic Ground-Truth Gating: Binary anomaly and risk verification (`noul`) before modifying system files or executing terminal commands.
+2. Causal Action Routing: Calibrated probability distributions over discrete tool or workflow choices (`choice`).
+3. Hardware Safety Awareness: Real-time GPU VRAM telemetry to prevent concurrent CUDA OutOfMemory crashes during media or heavy model pipelines.
+
+## Standard MCP Tool Declarations
+
+### 1. `gemma_intent_classify`
+Classifies incoming user intent into standardized operational categories.
+- Parameters:
+  * `instruction` (string, required): The target user request or task description.
+  * `context` (string, optional): Surrounding conversation or environment state.
+- Output Fields:
+  * `intent`: One of `CODE_MUTATE`, `READONLY_QUERY`, `SYSTEM_COMMAND`, `MEDIA_PIPELINE`, `RAG_RECALL`, `DANGEROUS_WRITE`.
+  * `confidence`: Float between 0.0 and 1.0.
+
+### 2. `gemma_jev_decide`
+Executes calibrated Jev causal primitives.
+- Parameters:
+  * `mode` (string, required): "noul" (binary safety gate), "choice" (multi-option routing), or "score" (1-5 risk scale).
+  * `question` (string, required): Proposition or decision question.
+  * `options` (array of objects, required for choice/score): `[{"t": "Label", "d": "Rationale"}]`.
+  * `state` (string, optional): Detailed background (error traces, file names, memory telemetry).
+- Output Fields:
+  * `pred`: Integer index of the winning option (or 0/1 for noul).
+  * `conf`: Softmax confidence score.
+  * `items`: Array of scored options with individual probabilities.
+
+### 3. `gemma_hardware_status`
+Queries host physical GPU and memory telemetry.
+- Parameters: None.
+- Output Fields:
+  * `gpu_available`: Boolean.
+  * `vram_usage_pct`: Percentage of VRAM occupied.
+  * `danger_level`: Integer from 1 (Safe) to 5 (Critical OOM Hazard).
+
+## Recommended Agent Decision Loop (Few-Shot Pattern)
+
+When planning a high-risk tool execution (e.g. `write_to_file`, `run_command`):
+1. First, call `gemma_hardware_status` to ensure GPU VRAM is not saturated (>90%).
+2. Call `gemma_jev_decide` with `mode: "noul"`:
+   - `question`: "Does this command or file modification risk irreversible damage or data loss?"
+   - `state`: "[Tool: write_to_file, Target: system.config, Action: Overwrite]"
+3. If `pred == 1` and `conf > 0.70`, pause and request user confirmation or create a backup snapshot first.

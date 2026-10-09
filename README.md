@@ -20,6 +20,16 @@ Instead of destructive full-parameter fine-tuning, this architecture keeps 100% 
 
 ---
 
+## For AI Agents & LLMs (模型自行接入指引)
+
+This repository includes native machine-readable interfaces and guidelines for autonomous AI models and coding agents:
+- **`llms.txt`**: Standard machine-readable system and tool specification ([llms.txt](llms.txt)).
+- **`AGENTS.md`**: Detailed LLM self-integration guide featuring system prompt injection templates, few-shot tool calling schemas, and safety gating workflows ([AGENTS.md](AGENTS.md)).
+
+Primary language models (such as Gemini, Claude, and local LLMs) can autonomously utilize EmbeddingGemma-2-Jev as a deterministic co-processor for safety gating, action routing, and hardware VRAM telemetry.
+
+---
+
 ## Architectural Highlights
 
 1. **Zero Catastrophic Forgetting**: The complete 744.4M multimodal foundation (271M text + 167M vision + 305M audio) remains untouched. Cross-modal retrieval and dense representations are 100% preserved.
