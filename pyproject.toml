@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embeddinggemma-2-jev"
+version = "1.0.0"
+description = "Non-destructive Multimodal Base with 7KB Modular Causal Decision Adapter for EmbeddingGemma-2"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Arnabest"}
+]
+keywords = [
+    "embeddinggemma",
+    "gemma",
+    "multimodal",
+    "jev",
+    "causal-decision",
+    "mcp",
+    "rag"
+]
+dependencies = [
+    "torch>=2.1.0",
+    "transformers>=4.48.0",
+    "accelerate>=0.28.0",
+    "safetensors>=0.4.0",
+    "huggingface-hub>=0.20.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/Arnabest/embeddinggemma-2-jev"
+Repository = "https://github.com/Arnabest/embeddinggemma-2-jev"

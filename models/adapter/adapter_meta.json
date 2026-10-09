@@ -1,0 +1,10 @@
+{
+  "base_model": "models/embeddinggemma2_full",
+  "base_parameters": "744.4M (Vision: 167M, Audio: 305M, Text: 271M)",
+  "adapter_type": "Jev Multi-Task Decision Head (Noul + Choice + Score)",
+  "training_samples": 9362,
+  "best_val_loss": 2.5513,
+  "choice_accuracy": 0.756,
+  "context_window": 8192,
+  "precision": "bfloat16"
+}

@@ -1,0 +1,7 @@
+EmbeddingGemma-2-Jev
+Copyright 2026 Arnabest and contributors.
+
+This product includes software developed based on Google DeepMind's EmbeddingGemma-2 architecture:
+Copyright 2026 Google LLC.
+Licensed under the Apache License, Version 2.0.
+Official Base Model: https://huggingface.co/google/embeddinggemma-2

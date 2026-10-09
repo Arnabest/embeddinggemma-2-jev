@@ -1,0 +1,43 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Large model weights (Users should run models/download_base_model.py)
+models/base/
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# Explicitly keep lightweight adapter (~7KB)
+!models/adapter/adapter.pt
+!models/adapter/adapter_meta.json
+
+# Local training datasets & private transcripts (Isolation policy)
+data/train.jsonl
+data/val.jsonl
+data/*supplement*.jsonl
+data/*private*.jsonl
+*.jsonl.bak
+bench/brain_dialogue_index.jsonl
+
+# Training runs & logs
+train/runs/
+logs/
+*.log
+
+# IDE & system files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.nexus/
