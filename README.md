@@ -67,6 +67,11 @@ embeddinggemma-2-jev/
 ├── data/
 │   ├── README.md                  # Dataset schema specification
 │   └── sample_dataset.jsonl       # Sanitized generic engineering samples
+├── mcp/
+│   ├── server.py                  # Standard MCP Stdio JSON-RPC Server (10 tools)
+│   ├── engine.py                  # Modular decision micro-kernel facade
+│   ├── deciders/                  # Specialized decision kernels (command, failure, memory, audit, router)
+│   └── recall/                    # Prior recall hub (dialogue, skills, vault)
 └── tests/
     └── test_decision_inference.py # Unit tests for inference primitives
 ```
