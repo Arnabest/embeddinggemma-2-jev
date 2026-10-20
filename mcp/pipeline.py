@@ -43,13 +43,29 @@ class ContextAssemblyPipeline:
         hud_lines.append(f"- [核心意图] `{intent_tag}` (置信度: {intent_conf:.1%}) | {intent_info.get('description', '')}")
 
         # 硬件行
-        if hw_info.get("gpu_available"):
+        if hw_info.get("gpu_available") or hw_info.get("ram_usage_pct"):
             used = hw_info.get("vram_used_mb", 0)
             tot = hw_info.get("vram_total_mb", 0)
             pct = hw_info.get("vram_usage_pct", 0.0)
             lvl = hw_info.get("danger_level", 1)
-            warn = "[警告: 显存高水位]" if lvl >= 4 else "[正常: 显存充裕]"
-            hud_lines.append(f"- [硬件状态] {warn} (RTX 4060 Ti 显存: {used}/{tot}MB, {pct}% 占用)")
+            ram_pct = hw_info.get("ram_usage_pct", 0.0)
+            cpu_pct = hw_info.get("cpu_usage_pct", 0.0)
+
+            if lvl >= 5:
+                warn = "[危险: 显存/内存饱和]"
+            elif lvl == 4:
+                warn = "[警告: 显存高水位/系统卡顿风险]"
+            elif lvl == 3:
+                warn = "[关注: 资源吃紧]"
+            elif lvl == 2:
+                warn = "[适中: 负载平稳]"
+            else:
+                warn = "[正常: 资源充裕]"
+
+            detail_str = f"RTX 4060 Ti 显存: {used}/{tot}MB ({pct}%)"
+            if ram_pct > 0:
+                detail_str += f" | 内存: {ram_pct}% | CPU: {cpu_pct}%"
+            hud_lines.append(f"- [硬件状态] {warn} ({detail_str})")
 
         # 召回先验行
         if recalls:

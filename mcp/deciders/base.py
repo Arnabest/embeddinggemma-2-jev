@@ -45,16 +45,31 @@ class JevDeciderBase:
                     status["vram_used_mb"] = used
                     status["vram_free_mb"] = free
                     status["vram_usage_pct"] = round((used / max(1, tot)) * 100, 1)
-                    if status["vram_usage_pct"] > 90:
-                        status["danger_level"] = 5
-                    elif status["vram_usage_pct"] > 80:
-                        status["danger_level"] = 4
-                    elif status["vram_usage_pct"] > 65:
-                        status["danger_level"] = 3
-                    else:
-                        status["danger_level"] = 1
         except Exception:
             pass
+
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            status["ram_total_mb"] = round(mem.total / 1024 / 1024)
+            status["ram_used_mb"] = round(mem.used / 1024 / 1024)
+            status["ram_usage_pct"] = mem.percent
+            status["cpu_usage_pct"] = psutil.cpu_percent(interval=None)
+        except Exception:
+            pass
+
+        v_pct = status.get("vram_usage_pct", 0.0)
+        r_pct = status.get("ram_usage_pct", 0.0)
+        if v_pct > 85 or r_pct > 88:
+            status["danger_level"] = 5
+        elif v_pct > 70 or r_pct > 80:
+            status["danger_level"] = 4
+        elif v_pct > 55 or r_pct > 70:
+            status["danger_level"] = 3
+        elif v_pct > 35:
+            status["danger_level"] = 2
+        else:
+            status["danger_level"] = 1
 
         try:
             import subprocess

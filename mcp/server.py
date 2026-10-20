@@ -240,6 +240,26 @@ class GemmaPrepCoreMCPServer:
                     },
                     "required": ["prompt"]
                 }
+            },
+            {
+                "name": "gemma_trigger_evolution",
+                "description": "Trigger 70/30 experience replay incremental distillation cycle for JEV decision adapter using harvested physical ground-truth cases and Xing intent dataset.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "epochs": {"type": "integer", "description": "Number of incremental distillation epochs (default 5)."},
+                        "force": {"type": "boolean", "description": "Force evolution cycle even if harvest buffer is empty (default false)."},
+                        "lr": {"type": "number", "description": "Learning rate (default 1e-4)."}
+                    }
+                }
+            },
+            {
+                "name": "gemma_evolution_status",
+                "description": "Retrieve current JEV adapter weights, loss convergence, and self-evolution status.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
             }
         ]
 
@@ -296,6 +316,14 @@ class GemmaPrepCoreMCPServer:
                 prompt=args.get("prompt", ""),
                 context_len=args.get("context_len", 0)
             )
+        elif name == "gemma_trigger_evolution":
+            return self.engine.trigger_evolution(
+                epochs=args.get("epochs", 5),
+                lr=args.get("lr", 1e-4),
+                force=args.get("force", False)
+            )
+        elif name == "gemma_evolution_status":
+            return self.engine.get_evolution_status()
         else:
             return {"error": f"Unknown tool: {name}"}
 

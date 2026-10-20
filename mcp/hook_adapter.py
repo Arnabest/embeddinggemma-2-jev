@@ -78,14 +78,14 @@ def evaluate_pre_tool_use(payload: dict) -> dict:
 
         # 变异工具或命令执行
         if tool_name in ("write_to_file", "replace_file_content", "run_command"):
-            # 1. 硬件显存饱和检查
+            # 1. 硬件显存与资源饱和检查
             hw = engine.get_hardware_status()
-            if hw.get("danger_level", 1) >= 5 and tool_name == "run_command":
+            if hw.get("danger_level", 1) >= 4 and tool_name == "run_command":
                 cmd = str(args.get("CommandLine", ""))
-                if any(k in cmd.lower() for k in ("python", "torch", "comfy", "train")):
+                if any(k in cmd.lower() for k in ("python", "torch", "comfy", "train", "pytest", "ollama")):
                     return {
                         "decision": "ask",
-                        "reason": f"Gemma-Jev 硬件哨兵拦截: 当前 GPU 显存占用高达 {hw.get('vram_usage_pct')}%，并发下发大任务极可能引发 CUDA OOM 崩溃，请确认是否继续。"
+                        "reason": f"Gemma-Jev 硬件哨兵拦截: 当前 GPU 显存占用高达 {hw.get('vram_usage_pct')}% (内存 {hw.get('ram_usage_pct', 0)}%)，系统资源已处于高水位/卡顿临界区，继续下发密集任务极可能引发系统微卡顿或 CUDA OOM，请确认是否继续。"
                     }
 
             # 2. 危险写盘检查

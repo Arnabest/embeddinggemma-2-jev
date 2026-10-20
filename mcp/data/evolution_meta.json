@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "loss": 0.4322,
+  "total_samples": 53,
+  "base_samples_used": 37,
+  "increment_samples_used": 16,
+  "epochs": 2,
+  "duration_ms": 3.08,
+  "adapter_size_kb": 69.94,
+  "adapter_path": "C:\\Users\\arnag\\.gemini\\antigravity\\scratch\\embeddinggemma-2-jev\\mcp\\data\\adapter.pt",
+  "timestamp": 1792482066.8864837,
+  "hot_reloaded": true
+}
