@@ -22,6 +22,13 @@ sys.path.insert(0, str(HERE))
 
 from engine import GemmaPrepEngine
 from pipeline import ContextAssemblyPipeline
+from deciders.handoff_quota import (
+    assemble_full_hud,
+    inspect_gate_status,
+    list_all_handoffs,
+    resolve_dual_track_handoff,
+    save_dual_track_handoff,
+)
 
 
 class GemmaPrepCoreMCPServer:
@@ -260,6 +267,66 @@ class GemmaPrepCoreMCPServer:
                     "type": "object",
                     "properties": {}
                 }
+            },
+            {
+                "name": "gemma_dependency_route",
+                "description": "Route engineering requirements to recommended production dependencies and target environments based on local routing matrix and JEV causal arbitration.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Task instruction, feature requirement, or code module description."},
+                        "context": {"type": "string", "description": "Optional context snippet, existing code, or framework hint."},
+                        "ecosystem": {"type": "string", "description": "Optional target ecosystem (python, javascript, react, vue, go)."}
+                    },
+                    "required": ["prompt"]
+                }
+            },
+            {
+                "name": "gemma_handoff_manage",
+                "description": "Explicit cross-session dual-track handoff management (.nexus/handoff.json + memory-vault). Supports save, list (non-mutating), and resolve lifecycle closure.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["save", "list", "resolve"],
+                            "description": "Lifecycle action: save checkpoint, list pending/all handoffs, or resolve an active handoff."
+                        },
+                        "workspace_path": {"type": "string", "description": "Workspace root directory containing .nexus/handoff.json."},
+                        "conversation_id": {"type": "string", "description": "Session/conversation ID (defaults to 'default')."},
+                        "summary": {"type": "string", "description": "Concise summary of completed state and blockers (required for save)."},
+                        "next_steps": {"type": "array", "items": {"type": "string"}, "description": "Actionable next steps for the resuming session."},
+                        "reason": {"type": "string", "description": "Handoff reason (e.g. 'session_wrapup', 'quota_critical')."},
+                        "handoff_id": {"type": "string", "description": "Target handoff_id to resolve (optional if workspace_path given)."},
+                        "resolution_note": {"type": "string", "description": "Optional completion note when resolving a handoff."},
+                        "status_filter": {"type": "string", "description": "Filter for list: 'PENDING' (default) or 'ALL'."}
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "gemma_gate_status",
+                "description": "Read-only inspection of current session directional planning lock state, Connect-RPC quota cache, Stop-hook nudge status, and closed-loop JEV outcome backfill history.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "conversation_id": {"type": "string", "description": "Conversation ID to inspect (defaults to 'default')."},
+                        "workspace_path": {"type": "string", "description": "Optional workspace root to check pending handoffs."}
+                    }
+                }
+            },
+            {
+                "name": "gemma_inject_hud",
+                "description": "On-demand synthesizer returning a compact, ready-to-inject full HUD panel combining Attention HUD, 3-layer Blast Radius, Dead Branch/Self-Lock alerts, Quota, and Pending Handoffs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Optional current prompt or goal for intent & memory recall."},
+                        "workspace_path": {"type": "string", "description": "Optional workspace root path for Blast Radius & Dead Branch panels."},
+                        "conversation_id": {"type": "string", "description": "Optional conversation ID (defaults to 'default')."},
+                        "include_hardware": {"type": "boolean", "description": "Whether to query NVIDIA GPU VRAM status (default true)."}
+                    }
+                }
             }
         ]
 
@@ -324,6 +391,51 @@ class GemmaPrepCoreMCPServer:
             )
         elif name == "gemma_evolution_status":
             return self.engine.get_evolution_status()
+        elif name == "gemma_dependency_route":
+            return self.engine.route_dependencies(
+                prompt=args.get("prompt", ""),
+                context=args.get("context", ""),
+                ecosystem=args.get("ecosystem")
+            )
+        elif name == "gemma_handoff_manage":
+            act = str(args.get("action") or "list").lower()
+            ws = args.get("workspace_path")
+            conv_id = str(args.get("conversation_id") or "default")
+            if act == "save":
+                res = save_dual_track_handoff(
+                    conversation_id=conv_id,
+                    workspace_path=ws,
+                    summary=str(args.get("summary") or "Session handoff checkpoint"),
+                    next_steps=args.get("next_steps") or [],
+                    reason=str(args.get("reason") or "manual_handoff"),
+                )
+                return {"success": True, "action": "save", **res}
+            elif act == "list":
+                items = list_all_handoffs(
+                    workspace_paths=[str(ws)] if ws else None,
+                    status_filter=str(args.get("status_filter") or "PENDING"),
+                )
+                return {"success": True, "action": "list", "count": len(items), "items": items}
+            elif act == "resolve":
+                return resolve_dual_track_handoff(
+                    handoff_id=str(args.get("handoff_id") or ""),
+                    workspace_path=ws,
+                    resolution_note=str(args.get("resolution_note") or ""),
+                )
+            return {"error": f"Unknown handoff action: {act}"}
+        elif name == "gemma_gate_status":
+            return inspect_gate_status(
+                conversation_id=str(args.get("conversation_id") or "default"),
+                workspace_path=args.get("workspace_path"),
+            )
+        elif name == "gemma_inject_hud":
+            return assemble_full_hud(
+                prompt=str(args.get("prompt") or ""),
+                workspace_path=args.get("workspace_path"),
+                conversation_id=str(args.get("conversation_id") or "default"),
+                include_hardware=bool(args.get("include_hardware", True)),
+                pipeline=self.pipeline,
+            )
         else:
             return {"error": f"Unknown tool: {name}"}
 

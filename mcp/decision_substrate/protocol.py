@@ -9,6 +9,7 @@ Defines the model-agnostic contract for any decision engine taking over the agen
 - Divergence & competing execution route arbitration
 - Physical ground-truth completion gate verification
 - Post-turn codebase line budget & architectural audit
+- Dependency routing guidance for code generation
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ class IntentType(str, Enum):
     STATE_ROLLBACK = "STATE_ROLLBACK"
     DEEP_RESEARCH = "DEEP_RESEARCH"
     COMPOUND_CHAIN = "COMPOUND_CHAIN"
+    DIRECTIONAL_PLANNING = "DIRECTIONAL_PLANNING"
 
 
 @dataclass
@@ -46,6 +48,7 @@ class IntentDecision:
     description: str = ""
     slots: Dict[str, Any] = field(default_factory=dict)
     raw: Dict[str, Any] = field(default_factory=dict)
+    requires_clarification: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -56,6 +59,7 @@ class IntentDecision:
             "description": self.description,
             "slots": self.slots,
             "raw": self.raw,
+            "requires_clarification": self.requires_clarification,
         }
 
 
@@ -152,6 +156,8 @@ class PreTurnGrounding:
     recalled_memories: List[Dict[str, Any]]
     hud_markdown: str
     inject_steps: List[Dict[str, Any]] = field(default_factory=list)
+    dependency_guidance: List[Dict[str, Any]] = field(default_factory=list)
+    directional_gate: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -162,6 +168,8 @@ class PreTurnGrounding:
             "recalled_memories": self.recalled_memories,
             "hud_markdown": self.hud_markdown,
             "inject_steps": self.inject_steps,
+            "dependency_guidance": self.dependency_guidance,
+            "directional_gate": self.directional_gate,
         }
 
 

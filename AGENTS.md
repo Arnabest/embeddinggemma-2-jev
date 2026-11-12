@@ -128,3 +128,13 @@ Whenever you encounter:
 }
 ```
 **Agent Action:** The agent receives structured telemetry directly, avoiding unnecessary trial-and-error environment checks.
+
+---
+
+## 3. Extended Edge Governance Tools (`mcp/server.py` — 16 Tools)
+
+When connected to the full `mcp/server.py` micro-kernel, agents can invoke 12 additional specialized governance and lifecycle tools alongside the 4 core tools above:
+- **Pre-Action Safety & Routing**: `gemma_command_audit` (1-5 static shell danger audit), `gemma_dependency_route` (ecosystem dependency matrix routing), `gemma_model_route` (cognitive tier selection).
+- **Failure & Memory Hygiene**: `gemma_failure_triage` (traceback classification), `gemma_memory_gate` (novelty filter for dual-stream memory ingestion), `gemma_memory_recall` (cross-source RRF recall across vault, dialogue index, and skills).
+- **Post-Task & Session Governance**: `gemma_post_task_audit` (800-line budget & AST audit), `gemma_handoff_manage` (`save`/`list`/`resolve` cross-session handoff state), `gemma_gate_status` (directional planning lock & quota inspection), `gemma_inject_hud` (on-demand full status panel).
+- **Micro-Adapter Evolution**: `gemma_trigger_evolution`, `gemma_evolution_status`.

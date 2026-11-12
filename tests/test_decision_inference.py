@@ -14,7 +14,8 @@ from core.engine import GemmaPrepEngine
 def test_heuristic_fallback():
     engine = GemmaPrepEngine(
         base_model_dir="models/base",
-        adapter_path="models/adapter/adapter.pt"
+        adapter_path="models/adapter/adapter.pt",
+        daemon_url="http://127.0.0.1:0",
     )
 
     # 1. Noul test

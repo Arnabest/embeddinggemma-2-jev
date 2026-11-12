@@ -179,6 +179,6 @@ def generate_seed_distilled_corpus(output_path: Path) -> int:
 
 
 if __name__ == "__main__":
-    out = Path("F:/universal-mcp/gemma-prep-core/data/xing_system_intent_increment.jsonl")
+    out = Path(__file__).resolve().parent.parent / "data" / "xing_system_intent_increment.jsonl"
     cnt = generate_seed_distilled_corpus(out)
     print(f"[XingIntentDistiller] Successfully extracted and saved {cnt} pure system intent samples to {out}")

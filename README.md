@@ -67,10 +67,16 @@ embeddinggemma-2-jev/
 ├── data/
 │   ├── README.md                  # Dataset schema specification
 │   └── sample_dataset.jsonl       # Sanitized generic engineering samples
+├── bench/
+│   ├── eval_workplace_bench.py    # 40-command workplace safety & choice evaluator
+│   ├── workplace_bench_results.json # Recorded checkpoint benchmark outputs
+│   └── EVAL_NOTES.md              # Held-out Probe A/B error analysis
 ├── mcp/
-│   ├── server.py                  # Standard MCP Stdio JSON-RPC Server (10 tools)
+│   ├── server.py                  # Standard MCP Stdio JSON-RPC Server (16 tools)
 │   ├── engine.py                  # Modular decision micro-kernel facade
-│   ├── deciders/                  # Specialized decision kernels (command, failure, memory, audit, router)
+│   ├── decision_substrate/        # Unified arbitration kernel & adapters
+│   ├── deciders/                  # Command, failure, memory, audit, router, gate, handoff
+│   ├── harvest/                   # 70/30 incremental micro-adapter evolution
 │   └── recall/                    # Prior recall hub (dialogue, skills, vault)
 └── tests/
     └── test_decision_inference.py # Unit tests for inference primitives
@@ -170,11 +176,13 @@ To expose EmbeddingGemma-2-Jev tools to Claude, Gemini, or Antigravity agents, r
 }
 ```
 
-Exposed Tools:
+Exposed Tools (`serve/mcp_server.py` lightweight core):
 - `gemma_intent_classify`: Intent classification and routing recommendations.
 - `gemma_jev_decide`: Deterministic causal decision judge.
 - `gemma_assemble_context`: Attention HUD context assembly.
 - `gemma_hardware_status`: Live GPU memory telemetry.
+
+For the full 16-tool governance micro-kernel (`mcp/server.py`, adding `gemma_memory_recall`, `gemma_post_task_audit`, `gemma_command_audit`, `gemma_failure_triage`, `gemma_memory_gate`, `gemma_model_route`, `gemma_trigger_evolution`, `gemma_evolution_status`, `gemma_dependency_route`, `gemma_handoff_manage`, `gemma_gate_status`, and `gemma_inject_hud`), see [mcp/README.md](mcp/README.md).
 
 ---
 
@@ -198,6 +206,22 @@ python train/distill_incremental.py --base-model models/base --data data/sample_
 
 ---
 
+## Workplace Safety & Choice Benchmark
+
+Evaluation across 40 out-of-sample developer workplace shell commands (read-only, reversible write, network, destructive, catastrophic) recorded in [bench/workplace_bench_results.json](bench/workplace_bench_results.json) via [bench/eval_workplace_bench.py](bench/eval_workplace_bench.py):
+
+| Checkpoint | Level MAE | Choice Acc | High-Risk Denied | Safe False Alarms |
+| :--- | :---: | :---: | :---: | :---: |
+| `gemma_jev_prod (Base Prod)` | 1.223 | 32.5% | 0/16 (0.0%) | 0/16 (0.0%) |
+| `jev_harness_v1 (DeepSeek v1)` | 0.517 | 67.5% | 14/16 (87.5%) | 0/16 (0.0%) |
+| `jev_harness_v2 (DeepSeek v2)` | 0.618 | 72.5% | 12/16 (75.0%) | 1/16 (6.2%) |
+| `jev_harness_v3 (DeepSeek v3)` | 0.748 | 75.0% | 14/16 (87.5%) | 4/16 (25.0%) |
+| `jev_harness_v4 (Curated v4)` | **0.303** | **87.5%** | **16/16 (100.0%)** | **0/16 (0.0%)** |
+
+See [bench/EVAL_NOTES.md](bench/EVAL_NOTES.md) for qualitative held-out Probe A/B failure diagnostics (`v1`–`v3` over-sampling analysis). Note: full-backbone checkpoints (`best.pt`, ~542 MB) are excluded from Git tracking; the lightweight 7KB decision adapter remains tracked under `models/adapter/adapter.pt`.
+
+---
+
 ## Data Isolation Policy
 
 Private conversational transcripts, proprietary source code diffs, and local user trajectories are strictly isolated from this open-source repository. The `data/` directory only contains generic, sanitized engineering schemas (`sample_dataset.jsonl`).
@@ -214,10 +238,11 @@ Private conversational transcripts, proprietary source code diffs, and local use
 
 ## 中文概览
 
-**EmbeddingGemma-2-Jev** 是基于 Google DeepMind 开源的 `embeddinggemma-2`（744M 参数多模态模型）构建的外挂式因果决策引擎。
+**EmbeddingGemma-2-Jev** 是基于 Google DeepMind 开源的 `embeddinggemma-2`（744M 参数多模态模型）构建的外挂式因果决策引擎与边缘治理微内核。
 
 ### 核心特性
 1. **多模态底座完整保留**：744.4M 多模态权重（文本 271M + 视觉 167M + 音频 305M）完全只读冻结，杜绝灾难性遗忘。
 2. **7KB 轻量决策适配器**：通过任务标记与 Universal Scorer 覆盖 768 维统一隐空间，实现 Jev 三原语（Noul 门禁二元判定、Choice 动作分流、Score 态势五级定级）。
 3. **硬件容灾断路器 (Circuit Breaker)**：强制采用 `bfloat16` 消除 Gemma-2 的 FP16 数值下溢；在并发显存耗尽时自动捕获 CUDA OOM 并平滑热回退至 CPU float32。
-4. **多接口生态**：提供 Python SDK、REST API、标准 stdio MCP 协议服务端与生命周期 Hook 适配器。
+4. **16 工具边缘治理内核 (`mcp/`)**：支持方向性前置对齐门禁 (`directional_gate`)、4 级会话画像 (`session_context`)、生态依赖路由矩阵 (`dependency_router`)、双轨交接与配额感知 (`handoff_quota`)，以及 70/30 增量微适配器自进化。
+5. **多接口与基准验证 (`bench/`)**：提供 Python SDK、REST API、标准 stdio MCP 协议服务端、生命周期 Hook 适配器，以及 40 项工作场景命令安全与选择基准评测（Curated v4 达到 `0.303` MAE、87.5% Choice 准确率与 16/16 高危命令 100% 拦截 / 0 误报）。

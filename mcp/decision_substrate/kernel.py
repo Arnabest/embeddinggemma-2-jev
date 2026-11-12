@@ -11,6 +11,7 @@ Coordinates all agent loop decision mechanisms through a unified, model-agnostic
 6. Physical ground-truth completion gate verification & active replay harvesting.
 7. Post-task codebase line budget (800 lines limit) & memory vault payload generation.
 8. Runtime hot-swappable model adapters (JEV, Heuristic, OpenAI-compatible, Composite).
+9. Dependency routing guidance injection based on local matrix and task domain.
 """
 
 from __future__ import annotations
@@ -36,6 +37,10 @@ from .adapters import (
     HeuristicDecisionAdapter,
     JevGemmaDecisionAdapter,
 )
+from deciders.directional_gate import (
+    evaluate_directional_tool_gate,
+    format_directional_hud_block,
+)
 
 
 class DecisionSubstrate:
@@ -47,7 +52,9 @@ class DecisionSubstrate:
         self.adapter: BaseDecisionModelAdapter = adapter or JevGemmaDecisionAdapter()
         self.arbiter = EpistemicArbiter()
         self.hesitation_mgr = HesitationBudgetManager(default_budget=3)
+        self.enabled: bool = True
         self._engine = None
+        self._directional_locks: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def get_instance(cls) -> "DecisionSubstrate":
@@ -71,6 +78,12 @@ class DecisionSubstrate:
     # -------------------------------------------------------------------------
     # 1. Model Adapter Hot-Swapping & Telemetry
     # -------------------------------------------------------------------------
+    def is_enabled(self) -> bool:
+        return bool(getattr(self, "enabled", True))
+
+    def set_enabled(self, val: bool) -> None:
+        self.enabled = bool(val)
+
     def set_adapter(self, adapter: BaseDecisionModelAdapter) -> None:
         """Dynamically replace the underlying decision model adapter at runtime."""
         self.adapter = adapter
@@ -96,6 +109,23 @@ class DecisionSubstrate:
         return {
             "active_model": self.adapter.model_name,
             "hesitation_status": self.hesitation_mgr.get_status(),
+            "directional_locks": dict(self._directional_locks),
+        }
+
+    def is_directional_locked(self, session_id: str) -> bool:
+        """Return whether session_id currently holds an active directional pre-alignment lock."""
+        rec = self._directional_locks.get(session_id)
+        return bool(rec and rec.get("locked"))
+
+    def confirm_directional_plan(self, session_id: str, note: str = "") -> Dict[str, Any]:
+        """Unlock directional planning gate once user confirms details and planning requirements."""
+        had_lock = self.is_directional_locked(session_id)
+        self._directional_locks.pop(session_id, None)
+        return {
+            "session_id": session_id,
+            "unlocked": True,
+            "was_locked": had_lock,
+            "note": note,
         }
 
     # -------------------------------------------------------------------------
@@ -108,10 +138,30 @@ class DecisionSubstrate:
         state: str = "",
         include_recall: bool = True,
         include_hardware: bool = True,
+        session_profile: Optional[Dict[str, Any]] = None,
     ) -> PreTurnGrounding:
         """Master pre-turn hook taking over agent loop's prior assembly."""
+        if not self.is_enabled():
+            return PreTurnGrounding(
+                intent=IntentDecision(intent="BYPASS_GENERAL", confidence=1.0, description="Decision substrate bypassed"),
+                epistemic_weights={},
+                hesitation_status=self.hesitation_mgr.get_status(),
+                hardware_status={},
+                recalled_memories=[],
+                hud_markdown="",
+            )
+
+        s_prof = session_profile if isinstance(session_profile, dict) else {}
+        s_mode = str(s_prof.get("mode") or "")
+        s_ws = s_prof.get("primary_workspace")
+        s_bias = str(s_prof.get("stream_bias") or "")
+        intent_ctx = f"[SESSION_MODE:{s_mode}] {state}".strip() if s_mode else state
+
         # 1. Infer intent via active model adapter
-        intent = self.adapter.infer_intent(prompt, context=state)
+        try:
+            intent = self.adapter.infer_intent(prompt, context=intent_ctx, session_mode=s_mode)
+        except TypeError:
+            intent = self.adapter.infer_intent(prompt, context=intent_ctx)
 
         # 2. Epistemic evidence arbitration (anti-bias / anti-stale)
         epistemic = self.arbiter.arbitrate(instruction=prompt, context_snippet=state)
@@ -123,19 +173,74 @@ class DecisionSubstrate:
         eng = self._get_engine()
         hw_info = eng.get_hardware_status() if (eng and include_hardware) else {}
 
-        # 5. Hybrid memory recall
+        # 4.5 Context JEV Directional Pre-Alignment Gate
+        is_directional = intent.intent == "DIRECTIONAL_PLANNING" or bool(intent.requires_clarification)
+        raw_signals = []
+        if isinstance(intent.raw, dict):
+            raw_signals = intent.raw.get("signals") or intent.raw.get("directional_signals") or []
+
+        if is_directional:
+            directional_gate = {
+                "locked": True,
+                "phase": "CLARIFY_FIRST",
+                "intent": intent.intent,
+                "requires_clarification": True,
+                "signals": list(raw_signals),
+            }
+            self._directional_locks[session_id] = directional_gate
+        else:
+            self._directional_locks.pop(session_id, None)
+            directional_gate = {
+                "locked": False,
+                "phase": "EXECUTION_READY",
+                "intent": intent.intent,
+                "requires_clarification": False,
+                "signals": [],
+            }
+
+        # 5. Dependency routing guidance
+        dep_guidances: List[Dict[str, Any]] = []
+        hud_dep_text = ""
+        if eng and prompt:
+            try:
+                dep_res = eng.route_dependencies(prompt, context=state)
+                dep_guidances = dep_res.get("guidances", [])
+                hud_dep_text = dep_res.get("hud_text", "")
+            except Exception:
+                pass
+
+        # 6. Hybrid memory recall (preserving diagnostics if any seam degrades)
         recalls = []
+        recall_errors: List[str] = []
         if eng and include_recall and prompt:
             try:
-                recalls = eng.hybrid_recall(prompt, top_k=3)
-            except Exception:
+                hub = getattr(eng, "memory_hub", None)
+                if hub is not None and hasattr(hub, "recall_with_diagnostics"):
+                    try:
+                        diag = hub.recall_with_diagnostics(prompt, top_k=3, stream_bias=s_bias)
+                    except TypeError:
+                        diag = hub.recall_with_diagnostics(prompt, top_k=3)
+                    recalls = diag.get("results") or []
+                    recall_errors = diag.get("errors") or []
+                else:
+                    recalls = eng.hybrid_recall(prompt, top_k=3)
+            except Exception as exc:
                 recalls = []
+                recall_errors = [f"hybrid_recall:{type(exc).__name__}:{exc}"]
 
-        # 6. Build Standard Attention HUD
+        # 7. Build Standard Attention HUD
         hud_lines = ["[Unified-Decision-Substrate: 前置态势与先验装配]"]
+        if s_mode:
+            ws_label = s_ws or "独立会话 (无绑定工程)"
+            hud_lines.append(f"- [会话画像] `{s_mode}` | 作用域: `{ws_label}` | 记忆流偏好: `{s_bias or 'dual'}`")
         hud_lines.append(f"- [核心意图] `{intent.intent}` (置信度: {intent.confidence:.1%}) | {intent.description}")
+        if directional_gate.get("locked"):
+            hud_lines.append(format_directional_hud_block(True, signals=directional_gate.get("signals")))
         if intent.recommended_skills:
             hud_lines.append(f"  * 推荐协同技能: {', '.join(intent.recommended_skills)}")
+
+        if hud_dep_text:
+            hud_lines.append(hud_dep_text)
 
         if hw_info.get("gpu_available"):
             used = hw_info.get("vram_used_mb", 0)
@@ -167,6 +272,8 @@ class DecisionSubstrate:
                 if len(snip) > 120:
                     snip = snip[:120] + "..."
                 hud_lines.append(f"  * [{src}: {title}] {snip}")
+        elif recall_errors:
+            hud_lines.append(f"- [记忆召回告警] 召回降级/异常: {'; '.join(recall_errors[:2])}")
 
         hud_markdown = "\n".join(hud_lines)
 
@@ -178,6 +285,8 @@ class DecisionSubstrate:
             recalled_memories=recalls,
             hud_markdown=hud_markdown,
             inject_steps=[{"ephemeralMessage": hud_markdown}],
+            dependency_guidance=dep_guidances,
+            directional_gate=directional_gate,
         )
 
     # -------------------------------------------------------------------------
@@ -191,6 +300,22 @@ class DecisionSubstrate:
         context: Optional[Dict[str, Any]] = None,
     ) -> HazardDecision:
         """Master in-flight safety guard intercepting risky mutations."""
+        if context and "directional_locked" in context:
+            locked = bool(context["directional_locked"])
+            if not locked:
+                self._directional_locks.pop(session_id, None)
+        else:
+            locked = self.is_directional_locked(session_id)
+        if locked:
+            gate = evaluate_directional_tool_gate(tool_name, args, locked=True)
+            if gate:
+                return HazardDecision(
+                    decision="deny",
+                    risk_level="HIGH",
+                    reason=gate["reason"],
+                    is_blocked=True,
+                )
+
         # Hardware saturation check for heavy compute
         eng = self._get_engine()
         if eng and tool_name == "run_command":
@@ -206,7 +331,9 @@ class DecisionSubstrate:
                     )
 
         # Delegate tool inspection to active adapter
-        return self.adapter.evaluate_hazard(tool_name, args, context)
+        merged_ctx = dict(context or {})
+        merged_ctx["directional_locked"] = locked
+        return self.adapter.evaluate_hazard(tool_name, args, merged_ctx)
 
     # -------------------------------------------------------------------------
     # 4. Agent Loop Hook: Divergence Branching

@@ -1,0 +1,184 @@
+{
+  "version": "1.0.0",
+  "name": "Local-Dependency-Routing-Matrix",
+  "description": "本地依赖适用路由映射表: 建立开发需求、运行生产环境与推荐生产级依赖的映射关系",
+  "environments": {
+    "python_web_asgi": {
+      "name": "Python 高并发 Web/ASGI 生产环境",
+      "runtime": "Python 3.11+",
+      "isolation": "venv / uv / poetry",
+      "container": "Docker multi-stage (python:3.11-slim)",
+      "concurrency_model": "asyncio / uvloop"
+    },
+    "python_data_pipeline": {
+      "name": "Python 数据管道与离线计算环境",
+      "runtime": "Python 3.11+",
+      "isolation": "venv / conda",
+      "container": "Docker (python-slim with BLAS/OpenMP)",
+      "concurrency_model": "multiprocessing / native thread pool"
+    },
+    "node_enterprise_web": {
+      "name": "Node.js / TS 企业级服务端与前端环境",
+      "runtime": "Node.js 20+ LTS",
+      "isolation": "pnpm workspace",
+      "container": "Docker multi-stage (node:20-alpine)",
+      "concurrency_model": "Event Loop / Worker Threads"
+    },
+    "go_cloud_native": {
+      "name": "Go 云原生与低延迟微服务环境",
+      "runtime": "Go 1.22+",
+      "isolation": "go modules (go.sum)",
+      "container": "Docker scratch / distroless",
+      "concurrency_model": "Goroutines (CSP)"
+    }
+  },
+  "routes": [
+    {
+      "domain": "web_api_service",
+      "category": "后端 Web API 服务",
+      "trigger_keywords": ["api", "rest", "接口", "后端服务", "web服务", "fastapi", "gin", "fastify", "路由", "controller"],
+      "matrix": {
+        "python": {
+          "environment": "python_web_asgi",
+          "tier": "Tier 1",
+          "recommended": ["fastapi", "uvicorn", "pydantic"],
+          "rationale": "基于 Starlette + Pydantic v2，原生异步高性能，自动产出 OpenAPI 契约，支持高并发长连接。",
+          "anti_patterns": ["直接使用 flask 手写同步路由处理高并发", "直接裸写 http.server"]
+        },
+        "javascript": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["fastify", "@nestjs/core", "zod"],
+          "rationale": "Fastify 具备极高吞吐量与插件体系；复杂企业级业务推荐 NestJS 依赖注入与模块化。",
+          "anti_patterns": ["无节制使用陈旧 express 中间件", "缺少参数 schema 校验"]
+        },
+        "go": {
+          "environment": "go_cloud_native",
+          "tier": "Tier 1",
+          "recommended": ["github.com/gin-gonic/gin", "github.com/gofiber/fiber"],
+          "rationale": "零内存分配或极低开销，高吞吐微服务事实标准。",
+          "anti_patterns": ["全局变量混杂造成并发竞态"]
+        }
+      }
+    },
+    {
+      "domain": "data_contract_validation",
+      "category": "数据契约与入参校验",
+      "trigger_keywords": ["校验", "验证", "schema", "validator", "validation", "pydantic", "zod", "入参", "数据模型", "dto"],
+      "matrix": {
+        "python": {
+          "environment": "python_web_asgi",
+          "tier": "Tier 1",
+          "recommended": ["pydantic"],
+          "rationale": "Pydantic v2 基于 Rust 内核重写，校验性能提升 5-50 倍，无缝契合类型标注与序列化。",
+          "anti_patterns": ["手写长篇正则表达式校验字段", "手写大量 if-else 类型断言"]
+        },
+        "javascript": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["zod"],
+          "rationale": "TypeScript 优先的运行时模式声明，支持零样板自动类型推导 (z.infer)。",
+          "anti_patterns": ["依赖 loose 模式的 Joi 或无类型校验"]
+        }
+      }
+    },
+    {
+      "domain": "persistence_orm",
+      "category": "数据库持久化与 ORM",
+      "trigger_keywords": ["orm", "数据库", "sqlalchemy", "prisma", "drizzle", "gorm", "sqlc", "mysql", "postgres", "sqlite", "持久化"],
+      "matrix": {
+        "python": {
+          "environment": "python_web_asgi",
+          "tier": "Tier 1",
+          "recommended": ["sqlalchemy", "alembic", "asyncpg"],
+          "rationale": "SQLAlchemy 2.0 提供现代统一 Core/ORM 查询语法，搭配 Alembic 版本化迁移与 asyncpg 异步驱动。",
+          "anti_patterns": ["裸写字符串拼接 SQL", "开启 ORM 自动创建表而缺少版本化迁移"]
+        },
+        "javascript": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["drizzle-orm", "@prisma/client"],
+          "rationale": "Drizzle 提供极致轻量无冷启动的 SQL-like 体验；Prisma 具备最佳 DX 与自动迁移生成。",
+          "anti_patterns": ["手写非参数化 SQL 导致注入漏洞"]
+        },
+        "go": {
+          "environment": "go_cloud_native",
+          "tier": "Tier 1",
+          "recommended": ["gorm.io/gorm", "github.com/sqlc-dev/sqlc"],
+          "rationale": "高敏捷业务首选 GORM；超高性能与类型安全首选 sqlc (由 SQL 静态编译)。",
+          "anti_patterns": ["直接使用 database/sql 拼接未转义字符串"]
+        }
+      }
+    },
+    {
+      "domain": "frontend_ui_state",
+      "category": "前端 UI 与客户端状态管理",
+      "trigger_keywords": ["前端", "ui", "组件", "react", "vue", "zustand", "pinia", "tailwind", "shadcn", "状态管理"],
+      "matrix": {
+        "react": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["zustand", "@tanstack/react-query", "tailwindcss", "shadcn/ui"],
+          "rationale": "Zustand 轻量零样板管理客户端状态；TanStack Query 统一服务端缓存；Tailwind 零运行时样式。",
+          "anti_patterns": ["使用 Redux 产生海量冗余样板代码", "使用 CSS-in-JS 造成运行时性能瓶颈"]
+        },
+        "vue": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["pinia", "@tanstack/vue-query", "tailwindcss", "element-plus"],
+          "rationale": "Pinia 官方标配响应式状态；Vue-Query 统一异步数据流；Element Plus / Tailwind 提效 UI 研发。",
+          "anti_patterns": ["在组件内滥用全局 eventBus 产生内存泄漏"]
+        }
+      }
+    },
+    {
+      "domain": "async_task_queue",
+      "category": "异步任务编排与延迟队列",
+      "trigger_keywords": ["异步任务", "队列", "celery", "bullmq", "redis", "定时任务", "后台任务", "worker", "job"],
+      "matrix": {
+        "python": {
+          "environment": "python_web_asgi",
+          "tier": "Tier 1",
+          "recommended": ["celery", "redis", "arq"],
+          "rationale": "Celery 为分布式重型调度事实标准；Arq 基于纯 asyncio 提供极简超轻量异步队列。",
+          "anti_patterns": ["在 Web 请求主线程中使用 time.sleep 阻塞执行", "裸用 threading.Thread 无法持久化重试"]
+        },
+        "javascript": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["bullmq", "ioredis"],
+          "rationale": "基于 Redis Streams 的生产级任务队列，支持延迟任务、并发重试与状态流监控。",
+          "anti_patterns": ["直接用 setInterval 处理关键生产队列"]
+        }
+      }
+    },
+    {
+      "domain": "observability_logging",
+      "category": "日志遥测与可观测性",
+      "trigger_keywords": ["日志", "logger", "logging", "loguru", "zap", "pino", "tracing", "opentelemetry", "监控"],
+      "matrix": {
+        "python": {
+          "environment": "python_web_asgi",
+          "tier": "Tier 1",
+          "recommended": ["loguru", "opentelemetry-api"],
+          "rationale": "Loguru 开箱即用结构化输出与上下文追踪；OpenTelemetry 统一分布式链路追踪。",
+          "anti_patterns": ["在生产中使用 print 打印未经格式化的文本日志"]
+        },
+        "javascript": {
+          "environment": "node_enterprise_web",
+          "tier": "Tier 1",
+          "recommended": ["pino"],
+          "rationale": "极低开销的 JSON 结构化日志库，性能远超 winston。",
+          "anti_patterns": ["在生产循环中大量使用 console.log 阻塞事件循环"]
+        },
+        "go": {
+          "environment": "go_cloud_native",
+          "tier": "Tier 1",
+          "recommended": ["go.uber.org/zap"],
+          "rationale": "内存零分配的生产级结构化日志库。",
+          "anti_patterns": ["使用标准 log 包缺乏等级与结构化字段过滤"]
+        }
+      }
+    }
+  ]
+}

@@ -17,6 +17,7 @@ from ..protocol import (
     TriageDecision,
 )
 from .heuristic_adapter import HeuristicDecisionAdapter
+from deciders.directional_gate import evaluate_directional_tool_gate, is_readonly_tool_call
 
 
 class JevGemmaDecisionAdapter(BaseDecisionModelAdapter):
@@ -44,12 +45,16 @@ class JevGemmaDecisionAdapter(BaseDecisionModelAdapter):
         if eng:
             try:
                 res = eng.classify_intent(prompt, context)
+                intent_name = res.get("intent", "CODE_MUTATE")
+                rec_skills = ["pre-action-audit"] if intent_name == "DIRECTIONAL_PLANNING" else []
                 return IntentDecision(
-                    intent=res.get("intent", "CODE_MUTATE"),
+                    intent=intent_name,
                     confidence=res.get("confidence", 0.85),
+                    recommended_skills=rec_skills,
                     description=res.get("description", ""),
                     slots=res.get("slots", {}),
                     raw=res,
+                    requires_clarification=bool(res.get("requires_clarification") or intent_name == "DIRECTIONAL_PLANNING"),
                 )
             except Exception:
                 pass
@@ -61,6 +66,18 @@ class JevGemmaDecisionAdapter(BaseDecisionModelAdapter):
         args: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
     ) -> HazardDecision:
+        if context and context.get("directional_locked"):
+            gate = evaluate_directional_tool_gate(tool_name, args, locked=True)
+            if gate:
+                return HazardDecision(
+                    decision="deny",
+                    risk_level="HIGH",
+                    reason=gate["reason"],
+                    is_blocked=True,
+                )
+        if is_readonly_tool_call(tool_name, args):
+            return HazardDecision(decision="allow", risk_level="LOW")
+
         eng = self._get_engine()
         if eng:
             try:
@@ -78,8 +95,8 @@ class JevGemmaDecisionAdapter(BaseDecisionModelAdapter):
                         )
 
                 # 2. Critical file overwrite check
-                if tool_name == "write_to_file":
-                    target = str(args.get("TargetFile", "")).lower()
+                if tool_name in ("write_file", "write_to_file"):
+                    target = str(args.get("Path") or args.get("TargetFile") or "").lower()
                     is_overwrite = bool(args.get("Overwrite"))
                     if is_overwrite and any(k in target for k in ("config", "adapter.pt", "model.safetensors")):
                         dec = eng.jev_decide(

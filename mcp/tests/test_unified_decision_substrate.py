@@ -150,7 +150,7 @@ def test_in_flight_hazard_checks():
     substrate = DecisionSubstrate(adapter=HeuristicDecisionAdapter())
 
     # Safe read-only tool
-    h1 = substrate.on_hazard_check("view_file", {"AbsolutePath": "F:/test.py"})
+    h1 = substrate.on_hazard_check("view_file", {"AbsolutePath": "/workspace/test.py"})
     assert h1.decision == "allow"
     assert h1.to_proto_hook_dict() == {"decision": "allow"}
 
@@ -161,7 +161,7 @@ def test_in_flight_hazard_checks():
     assert h2.to_proto_hook_dict()["decision"] == "deny"
 
     # Protected git metadata directory
-    h3 = substrate.on_hazard_check("write_to_file", {"TargetFile": "F:/repo/.git/config"})
+    h3 = substrate.on_hazard_check("write_to_file", {"TargetFile": "/workspace/repo/.git/config"})
     assert h3.decision == "deny"
     assert h3.is_blocked is True
 

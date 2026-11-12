@@ -18,6 +18,14 @@ from ..protocol import (
     IntentDecision,
     TriageDecision,
 )
+from deciders.directional_gate import (
+    clean_user_text,
+    evaluate_directional_intent,
+    evaluate_directional_tool_gate,
+    extract_slots,
+    is_readonly_query,
+    is_readonly_tool_call,
+)
 
 
 class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
@@ -28,27 +36,15 @@ class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
         return "heuristic_symbolic_engine"
 
     def _extract_slots(self, prompt: str) -> Dict[str, Any]:
-        """轻量级槽位抽取器 (借鉴 Schema-Guided Slot Filling 理念)."""
-        slots: Dict[str, Any] = {}
-        # 1. URL 提取
-        urls = re.findall(r'https?://[^\s<>"]+', prompt)
-        if urls:
-            slots["urls"] = urls
-        # 2. 文件路径模式
-        files = re.findall(r'[\w\-./\\]+\.(?:py|md|json|ts|tsx|js|html|bat|sh|yaml|yml)', prompt)
-        if files:
-            slots["target_files"] = list(set(files))
-        # 3. Git 分支/引用
-        git_match = re.search(r'git\s+(?:checkout|reset|revert|switch|branch)\s+([a-zA-Z0-9_\-./]+)', prompt)
-        if git_match:
-            slots["git_target"] = git_match.group(1)
-        return slots
+        """轻量级槽位抽取器 (委托给共享 directional_gate)."""
+        return extract_slots(prompt)
 
-    def infer_intent(self, prompt: str, context: str = "") -> IntentDecision:
-        p_lower = prompt.lower()
+    def infer_intent(self, prompt: str, context: str = "", session_mode: str = "") -> IntentDecision:
+        clean_prompt = clean_user_text(prompt)
+        p_lower = clean_prompt.lower()
         c_lower = context.lower()
         combined = f"{p_lower} {c_lower}"
-        slots = self._extract_slots(prompt)
+        slots = self._extract_slots(clean_prompt)
 
         # 1. High Hazard Checks
         if any(w in combined for w in ("rmdir /s", "rm -rf", "drop database", "format ", "mkfs", "delete from", "清空磁盘", "格式化")):
@@ -72,7 +68,21 @@ class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
                 slots=slots,
             )
 
-        # 3. Browser Action & CDP Sensing (网页嗅探与前端交互)
+        # 3. Directional Planning Pre-Alignment (方向性指令前置交流与规划门禁)
+        dir_eval = evaluate_directional_intent(clean_prompt, context=context, slots=slots)
+        if dir_eval["is_directional"]:
+            return IntentDecision(
+                intent="DIRECTIONAL_PLANNING",
+                confidence=dir_eval["confidence"],
+                recommended_skills=["pre-action-audit"],
+                risk_level="LOW",
+                description="宏观方向性指令，须先只读勘察并与用户交流细节及规划要求后再执行",
+                slots=slots,
+                raw=dir_eval,
+                requires_clarification=True,
+            )
+
+        # 4. Browser Action & CDP Sensing (网页嗅探与前端交互)
         if any(w in p_lower for w in ("browser", "cdp", "网页", "嗅探", "sniffer", "bilibili", "b站", "弹幕", "三连", "油猴", "tampermonkey", "tab_id")):
             return IntentDecision(
                 intent="BROWSER_ACTION",
@@ -128,7 +138,7 @@ class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
             )
 
         # 8. Readonly Query
-        if any(w in p_lower for w in ("查看", "解释", "阅读", "查询", "什么是", "怎么用", "explain", "read", "view", "how to", "search", "文档", "doc")):
+        if is_readonly_query(clean_prompt, context):
             return IntentDecision(
                 intent="READONLY_QUERY",
                 confidence=0.88,
@@ -138,7 +148,26 @@ class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
                 slots=slots,
             )
 
-        # 9. Code Mutate (Default for software engineering)
+        # 9. Session-aware default fallback (standalone Q&A/scratch vs software engineering)
+        eff_mode = session_mode
+        if not eff_mode:
+            m_mode = re.search(r"\[SESSION_MODE:(workspace_bound|standalone_targeted_repo|standalone_scratch|standalone_chat_research)\]", context or "")
+            if m_mode:
+                eff_mode = m_mode.group(1)
+        if eff_mode in ("standalone_chat_research", "standalone_scratch"):
+            from deciders.session_context import has_explicit_code_mutation_signal
+
+            if not has_explicit_code_mutation_signal(clean_prompt):
+                return IntentDecision(
+                    intent="READONLY_QUERY",
+                    confidence=0.78,
+                    recommended_skills=["model-catalog"],
+                    risk_level="LOW",
+                    description="Standalone Q&A / research or scratch exploration without project repo mutation",
+                    slots=slots,
+                )
+
+        # 10. Code Mutate (Default for software engineering)
         return IntentDecision(
             intent="CODE_MUTATE",
             confidence=0.85,
@@ -154,8 +183,19 @@ class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
         args: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
     ) -> HazardDecision:
+        # Directional planning lock gate (must confirm details before mutation/execution)
+        if context and context.get("directional_locked"):
+            gate = evaluate_directional_tool_gate(tool_name, args, locked=True)
+            if gate:
+                return HazardDecision(
+                    decision="deny",
+                    risk_level="HIGH",
+                    reason=gate["reason"],
+                    is_blocked=True,
+                )
+
         # Read-only tools are always allowed
-        if tool_name in ("view_file", "search_web", "call_mcp_tool", "vault_search", "shelf_search", "inspect_trajectory"):
+        if is_readonly_tool_call(tool_name, args) or tool_name in ("inspect_trajectory",):
             return HazardDecision(decision="allow", risk_level="LOW")
 
         # Mutating operations
@@ -176,8 +216,8 @@ class HeuristicDecisionAdapter(BaseDecisionModelAdapter):
                     requires_human_confirmation=True,
                 )
 
-        if tool_name in ("write_to_file", "replace_file_content"):
-            target = str(args.get("TargetFile", "")).lower()
+        if tool_name in ("write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content"):
+            target = str(args.get("Path") or args.get("TargetFile") or "").lower()
             if any(p in target for p in ("c:\\windows", "c:\\program files", "/etc", "/bin", "/boot")):
                 return HazardDecision(
                     decision="deny",

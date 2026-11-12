@@ -25,6 +25,15 @@ from server import GemmaPrepCoreMCPServer
 
 class TestEvolutionClosedLoop:
 
+    @pytest.fixture(autouse=True)
+    def _isolate_evolution_outputs(self, tmp_path, monkeypatch):
+        import harvest.evolution_runner as er
+        iso_adapter = tmp_path / "isolated_adapter.pt"
+        iso_meta = tmp_path / "isolated_evolution_meta.json"
+        monkeypatch.setattr(er, "DEFAULT_ADAPTER_PATH", iso_adapter)
+        monkeypatch.setattr(er, "METADATA_PATH", iso_meta)
+        monkeypatch.setattr(er.JevEvolutionRunner.__init__, "__defaults__", (er.DATA_DIR, iso_adapter))
+
     def test_runner_distillation_and_weight_emission(self, tmp_path):
         """1. 验证增量蒸馏物理产出 7KB 级 adapter.pt 权重与元数据."""
         adapter_file = tmp_path / "adapter.pt"

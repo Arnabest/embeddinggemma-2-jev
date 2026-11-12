@@ -42,6 +42,20 @@ Queries host physical GPU and memory telemetry.
   * `vram_usage_pct`: Percentage of VRAM occupied.
   * `danger_level`: Integer from 1 (Safe) to 5 (Critical OOM Hazard).
 
+### 4. Extended Governance Suite (`mcp/server.py`, 16 Total Tools)
+In addition to `gemma_intent_classify`, `gemma_jev_decide`, `gemma_assemble_context`, and `gemma_hardware_status`, the modular `mcp/server.py` server exposes:
+- `gemma_memory_recall`: Cross-source hybrid RRF recall (vault, dialogue index, skills).
+- `gemma_command_audit`: Static shell command danger scorer (levels 1-5).
+- `gemma_failure_triage`: Millisecond traceback & exit-code root-cause classifier.
+- `gemma_memory_gate`: High-entropy novelty filter for dual-stream memory ingestion.
+- `gemma_model_route`: Cognitive tier router (`LOCAL_LIGHT`, `CLOUD_FLASH`, `CLOUD_PRO`).
+- `gemma_dependency_route`: Ecosystem dependency matrix router (`python`, `javascript`, `react`, `vue`, `go`).
+- `gemma_post_task_audit`: Workspace 800-line budget & AST structural audit.
+- `gemma_handoff_manage`: Dual-track session handoff (`save`, `list`, `resolve`).
+- `gemma_gate_status`: Read-only directional planning lock & quota state inspection.
+- `gemma_inject_hud`: On-demand HUD synthesizer (Attention + Blast Radius + Quota + Handoffs).
+- `gemma_trigger_evolution` / `gemma_evolution_status`: 70/30 incremental micro-adapter distillation & status.
+
 ## Recommended Agent Decision Loop (Few-Shot Pattern)
 
 When planning a high-risk tool execution (e.g. `write_to_file`, `run_command`):

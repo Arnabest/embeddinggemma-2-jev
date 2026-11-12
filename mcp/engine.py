@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 r"""GemmaPrepEngine: 决策微内核顶级门面 (Facade / Shim)。
 整合：
-1. 决策微内核集 (JevDeciderBase, CommandGuard, FailureTriage, MemoryGate, CodebaseAudit, ModelRouter)
+1. 决策微内核集 (JevDeciderBase, CommandGuard, FailureTriage, MemoryGate, CodebaseAudit, ModelRouter, DependencyRouter)
 2. 跨源记忆与历史召回中枢 (MemoryHub)
 3. 硬件态势感知与全场景意图流分类 (11大原子意图 + 伴随槽位抽取)
 4. JEV 70/30 经验回放增量微调与自进化闭环 (JevEvolutionRunner)
@@ -25,6 +25,11 @@ from deciders import (
     MemoryGateDecider,
     CodebaseAuditDecider,
     ModelRouterDecider,
+    DependencyRouterDecider,
+    clean_user_text,
+    evaluate_directional_intent,
+    extract_slots,
+    is_readonly_query,
 )
 from recall import MemoryHub
 
@@ -39,6 +44,7 @@ class GemmaPrepEngine:
         self.memory_gate = MemoryGateDecider(self.base)
         self.codebase_audit = CodebaseAuditDecider(self.base)
         self.model_router = ModelRouterDecider(self.base)
+        self.dependency_router = DependencyRouterDecider(self.base)
         self.memory_hub = MemoryHub()
 
     # ------------------------------------------------------------------------- 硬件探针
@@ -52,18 +58,10 @@ class GemmaPrepEngine:
         return self.base.jev_decide(mode, question, options, state)
 
     # ------------------------------------------------------------------------- 前置意图分类
-    def classify_intent(self, instruction: str, context: str = "") -> dict:
-        """评估用户指令的核心意图，做动作分流建议 (涵盖11大系统与工程原子意图)."""
-        slots: Dict[str, Any] = {}
-        urls = re.findall(r'https?://[^\s<>"]+', instruction)
-        if urls:
-            slots["urls"] = urls
-        files = re.findall(r'[\w\-./\\]+\.(?:py|md|json|ts|tsx|js|html|bat|sh|yaml|yml)', instruction)
-        if files:
-            slots["target_files"] = list(set(files))
-        git_match = re.search(r'git\s+(?:checkout|reset|revert|switch|branch)\s+([a-zA-Z0-9_\-./]+)', instruction)
-        if git_match:
-            slots["git_target"] = git_match.group(1)
+    def classify_intent(self, instruction: str, context: str = "", session_mode: str = "") -> dict:
+        """评估用户指令的核心意图，做动作分流建议 (涵盖12大系统与工程原子意图)."""
+        clean_inst = clean_user_text(instruction)
+        slots: Dict[str, Any] = extract_slots(clean_inst)
 
         options = [
             {"t": "CODE_MUTATE", "d": "编写、修改、重构、修Bug或生成源代码"},
@@ -76,18 +74,24 @@ class GemmaPrepEngine:
             {"t": "MULTIMODAL_PROCESS", "d": "语音合成TTS、音视频转写FunASR或OCR文字识别"},
             {"t": "SWARM_ORCHESTRATE", "d": "多路径子代理派发、并发探索或蜂群编排"},
             {"t": "STATE_ROLLBACK", "d": "Git Shadow 快照恢复、撤销更改或消除脏改动"},
-            {"t": "DEEP_RESEARCH", "d": "学术前沿论文研读、数学公式推导与复杂消融实验提炼"}
+            {"t": "DEEP_RESEARCH", "d": "学术前沿论文研读、数学公式推导与复杂消融实验提炼"},
+            {"t": "DIRECTIONAL_PLANNING", "d": "提出宏观方向、开放式建设目标或架构演进意向，需先沟通具体细节与规划要求后再动手"},
         ]
         question = "请判定当前用户指令的核心意图类别："
-        state = f"用户指令: {instruction}\n上下文摘要: {context[:400]}"
+        state = f"用户指令: {clean_inst}\n上下文摘要: {context[:400]}"
         dec = self.base.jev_decide("choice", question, options, state)
         chosen = options[dec["pred"]]["t"]
         conf = dec.get("conf", 0.0)
 
-        q_lower = instruction.lower()
+        q_lower = clean_inst.lower()
+        dir_eval = evaluate_directional_intent(clean_inst, context=context, slots=slots)
+
         if any(w in q_lower for w in ("git reset", "git revert", "git checkout .", "回滚", "撤销修改", "还原快照", "rollback", "undo", "消除脏改动")):
             chosen = "STATE_ROLLBACK"
             conf = max(conf, 0.92)
+        elif dir_eval["is_directional"]:
+            chosen = "DIRECTIONAL_PLANNING"
+            conf = max(conf, dir_eval["confidence"])
         elif any(w in q_lower for w in ("browser", "cdp", "网页", "嗅探", "sniffer", "bilibili", "b站", "弹幕", "三连", "油猴", "tampermonkey")):
             chosen = "BROWSER_ACTION"
             conf = max(conf, 0.91)
@@ -100,10 +104,26 @@ class GemmaPrepEngine:
         elif any(w in q_lower for w in ("论文", "arxiv", "公式推导", "消融实验", "paper", "研究报告", "研报总结", "算法提炼")):
             chosen = "DEEP_RESEARCH"
             conf = max(conf, 0.88)
-        elif any(w in q_lower for w in ("怎么样", "如何", "查看", "查询", "多少", "状态", "为什么", "运行情况", "check", "status", "how")):
-            if not any(w in q_lower for w in ("删除", "rmdir", "delete", "覆写", "覆盖", "重构", "修改", "写一个")):
+        elif is_readonly_query(clean_inst, context):
+            chosen = "READONLY_QUERY"
+            conf = max(conf, 0.88)
+        else:
+            from deciders.session_context import has_explicit_code_mutation_signal
+
+            light_standalone = session_mode in ("standalone_chat_research", "standalone_scratch")
+            default_fallback = "READONLY_QUERY" if (light_standalone and not has_explicit_code_mutation_signal(clean_inst)) else "CODE_MUTATE"
+            if chosen == "MEDIA_COMFYUI" and not any(w in q_lower for w in ("comfy", "出图", "生图", "生视频", "图像", "图片", "画图", "flux", "sdxl", "lora")):
+                chosen = default_fallback
+                conf = max(conf, 0.82 if default_fallback == "READONLY_QUERY" else 0.85)
+            elif chosen == "DANGEROUS_WRITE" and not any(w in q_lower for w in ("rmdir", "rm -rf", "format ", "mkfs", "drop table", "drop database", "delete from", "清空", "强行覆盖", "删库", "覆盖配置")):
+                chosen = default_fallback
+                conf = max(conf, 0.82 if default_fallback == "READONLY_QUERY" else 0.85)
+            elif chosen == "DIRECTIONAL_PLANNING" and not dir_eval["is_directional"]:
+                chosen = default_fallback
+                conf = max(conf, 0.82 if default_fallback == "READONLY_QUERY" else 0.85)
+            elif chosen == "CODE_MUTATE" and default_fallback == "READONLY_QUERY":
                 chosen = "READONLY_QUERY"
-                conf = max(conf, 0.78)
+                conf = min(conf, 0.80)
 
         desc = next((opt["d"] for opt in options if opt["t"] == chosen), options[0]["d"])
 
@@ -112,9 +132,11 @@ class GemmaPrepEngine:
             "confidence": conf,
             "description": desc,
             "slots": slots,
+            "requires_clarification": chosen == "DIRECTIONAL_PLANNING",
+            "directional_signals": dir_eval.get("signals", []) if chosen == "DIRECTIONAL_PLANNING" else [],
             "all_probs": dec.get("items", []),
             "latency_ms": dec.get("ms", 0.0),
-            "device": dec.get("device", "unknown")
+            "device": dec.get("device", "unknown"),
         }
 
     # ------------------------------------------------------------------------- 决策微内核特化能力
@@ -133,6 +155,10 @@ class GemmaPrepEngine:
     def route_model_tier(self, prompt: str, context_len: int = 0) -> Dict[str, Any]:
         """任务认知复杂度与模型档位推荐分流。"""
         return self.model_router.route_model_tier(prompt, context_len)
+
+    def route_dependencies(self, prompt: str, context: str = "", ecosystem: Optional[str] = None) -> Dict[str, Any]:
+        """匹配本地依赖适用路由指引与架构推荐."""
+        return self.dependency_router.route_dependencies(prompt, context=context, ecosystem=ecosystem)
 
     def post_task_codebase_audit(
         self,

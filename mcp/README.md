@@ -10,18 +10,23 @@ High-performance, edge-resident decision micro-kernel powered by **EmbeddingGemm
 - **Zero Cloud Token Waste**: Offloads micro-decisions (command security, syntax failure triage, memory filtering, post-task audits) from expensive cloud LLMs.
 - **Strict 800-Line Architecture**: Every component is modularized and adheres to strict line budget constraints (no monolithic files).
 - **Physical Ground Truth**: Uses compiler gates, AST analysis, and deterministic fallbacks rather than ungrounded subjective self-evaluation.
-- **Model Context Protocol (MCP)**: Native stdio JSON-RPC server providing 10 standard MCP tools.
+- **Model Context Protocol (MCP)**: Native stdio JSON-RPC server providing 16 standard MCP tools.
 
 ---
 
 ## Architecture Topology
 
 ```text
-gemma-prep-core/
-├── engine.py                   # High-level Facade / Shim (100% backward compatible)
-├── server.py                   # Standard MCP Stdio JSON-RPC Server
-├── pipeline.py                 # Context Assembly Pipeline (Attention HUD)
+mcp/
+├── engine.py                   # High-level Facade & 16-tool coordinator
+├── server.py                   # Standard MCP Stdio JSON-RPC Server (16 tools)
+├── pipeline.py                 # Context Assembly Pipeline (Attention HUD + Session Context)
 ├── hook_adapter.py             # Agent Loop Lifecycle Hooks (PreInvocation / PreToolUse)
+│
+├── decision_substrate/         # Unified Decision Kernel & Pluggable Adapters
+│   ├── protocol.py             # Canonical Intent / Decision types
+│   ├── kernel.py               # Arbitration substrate (JEV / Heuristic)
+│   └── adapters/               # Heuristic & JEV daemon adapters
 │
 ├── deciders/                   # Specialized Causal Decision Micro-Kernels
 │   ├── base.py                 # Jev Primitives (noul / choice / score) & Hardware Sensing
@@ -29,7 +34,15 @@ gemma-prep-core/
 │   ├── failure_triage.py       # Millisecond Root-Cause Traceback Classifier
 │   ├── memory_gate.py          # Dual-Stream Memory Hygiene Gate (Code vs Interaction)
 │   ├── codebase_audit.py       # Post-Task Reorganization & 800-Line Limit Auditor
-│   └── model_router.py         # Cognitive Complexity Analyzer & Model Tier Router
+│   ├── model_router.py         # Cognitive Complexity Analyzer & Model Tier Router
+│   ├── dependency_router.py    # Ecosystem Dependency Routing Matrix Arbiter
+│   ├── directional_gate.py     # Directional Planning Gate & Cross-Hook Lock Store
+│   ├── handoff_quota.py        # Cross-Session Dual-Track Handoff & Quota Telemetry
+│   └── session_context.py      # 4-Tier Session Profile & Stream Bias Detector
+│
+├── harvest/                    # 70/30 Experience Replay Incremental Evolution
+│   ├── evolution_runner.py     # Micro-adapter incremental distillation & hot reload
+│   └── xing_intent_distiller.py
 │
 └── recall/                     # Multi-Source Prior Recall Hub
     └── memory_hub.py           # Dialogue History, Skill Shelf, and Knowledge Vault Recall
@@ -67,8 +80,24 @@ Audits workspace line budgets post-task:
 
 ### 5. Model Tier Router (`gemma_model_route`)
 Recommends optimal model tier:
-- Fast routine tasks $\to$ `CLOUD_FLASH` (with `local_harness_eligible: True` for future local harness execution).
-- Multi-file refactor / architecture $\to$ `CLOUD_PRO`.
+- Fast routine tasks -> `CLOUD_FLASH` (with `local_harness_eligible: True` for future local harness execution).
+- Multi-file refactor / architecture -> `CLOUD_PRO`.
+
+### 6. Directional Planning Gate & 4-Tier Session Context (`deciders/directional_gate.py`, `deciders/session_context.py`)
+Detects open-ended architectural or creative goals before code mutation:
+- Locks mutating tools until scope alignment / clarification completes (`read_file` and `ask_question` remain allowed).
+- Profiles sessions into 4 tiers (`standalone_targeted_repo`, `multi_repo_coordination`, `creative_media_session`, `general_dialogue`) to adapt memory stream bias.
+
+### 7. Dependency Router (`gemma_dependency_route`)
+Matches task instructions against `data/dependency_routing_matrix.json` and JEV arbitration across ecosystems (`python`, `javascript`, `react`, `vue`, `go`).
+
+### 8. Governance, Handoff & On-Demand HUD (`gemma_handoff_manage`, `gemma_gate_status`, `gemma_inject_hud`)
+- **`gemma_handoff_manage`**: Explicit `.nexus/handoff.json` + vault dual-track `save`, `list`, and `resolve` checkpoint management.
+- **`gemma_gate_status`**: Read-only inspection of directional lock state, quota telemetry, stop-hook nudges, and harvested feedback counts.
+- **`gemma_inject_hud`**: On-demand HUD synthesis combining Attention HUD, Blast Radius warnings, quota state, and pending handoffs.
+
+### 9. Incremental Micro-Adapter Evolution (`gemma_trigger_evolution`, `gemma_evolution_status`)
+Triggers 70/30 experience-replay micro-adapter distillation and reports training status & loss convergence.
 
 ---
 
@@ -104,11 +133,8 @@ Add to your MCP configuration (e.g. `mcp_config.json`):
 ## Running Verification Tests
 
 ```bash
-# Test complete modular kernel suite
-python test_modular_kernel.py
-
-# Test codebase line budget auditor
-python test_post_task_audit.py
+# Run complete pytest suite (MCP + root decision inference tests)
+pytest -q -rs
 ```
 
 ---
